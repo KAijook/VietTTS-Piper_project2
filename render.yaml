@@ -2,10 +2,10 @@ services:
   - type: web
     name: tts-flask
     env: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
     startCommand: gunicorn --workers 1 --bind 0.0.0.0:$PORT app:app
     envVars:
       - key: SECRET_KEY
         generateValue: true
       - key: PYTHON_VERSION
-        value: 3.10.12
+        value: 3.10.12  # Python 3.10, compatible with TTS==0.22.0
