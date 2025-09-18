@@ -1,12 +1,16 @@
+import sys
+# Kiểm tra Python version ngay đầu (phải >=3.9, <3.12 cho TTS v0.22.0)
+if sys.version_info < (3, 9) or sys.version_info >= (3, 12):
+    raise RuntimeError(f"TTS requires Python >=3.9, <3.12, but found {sys.version}")
+
 from flask import Flask, request, render_template, send_file, flash, redirect, url_for
 import os
-import sys
 import uuid
 import re
 import numpy as np
 from scipy.io import wavfile
 import torch
-from TTS.api import TTS  # Import từ coqui-tts
+from TTS.api import TTS
 from TTS.tts.configs.xtts_config import XttsConfig
 import docx
 from num2words import num2words
@@ -16,10 +20,6 @@ import threading
 from functools import wraps
 from werkzeug.utils import secure_filename
 import soundfile as sf
-
-# Kiểm tra Python version (phải >=3.10, <3.13 cho coqui-tts 0.27.1)
-if sys.version_info < (3, 10) or sys.version_info >= (3, 13):
-    raise RuntimeError("coqui-tts requires Python >=3.10, <3.13")
 
 # Thiết lập logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -212,7 +212,7 @@ def extract_text(file):
         logging.error(f"Lỗi khi đọc file {filename}: {str(e)}")
         raise ValueError(f"Failed to process file {filename}: {str(e)}")
 
-def split_text(text, max_len=100):  # Giảm max_len để nhanh hơn trên CPU
+def split_text(text, max_len=100):
     """Chia text thành các phần bằng . và \n, mỗi phần <= max_len ký tự"""
     logging.debug("Bắt đầu chia văn bản")
     start_time = time.time()
