@@ -1,9 +1,10 @@
 flask==2.3.3
-TTS @ git+https://github.com/coqui-ai/TTS@fa28f99  
-torch==2.0.1   
+TTS @ git+https://github.com/coqui-ai/TTS@fa28f99   
+torch==2.0.1  # CPU version
 scipy==1.11.2
 python-docx==1.1.2
 num2words==0.5.13
 soundfile==0.12.1
 gunicorn==21.2.0
-numpy==1.23.5   
+numpy==1.23.5  
+librosa==0.10.1   
