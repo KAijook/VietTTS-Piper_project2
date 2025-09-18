@@ -6,7 +6,7 @@ import re
 import numpy as np
 from scipy.io import wavfile
 import torch
-from TTS.api import TTS  # Giữ nguyên import từ coqui-tts
+from TTS.api import TTS  # Import từ coqui-tts
 from TTS.tts.configs.xtts_config import XttsConfig
 import docx
 from num2words import num2words
@@ -17,7 +17,7 @@ from functools import wraps
 from werkzeug.utils import secure_filename
 import soundfile as sf
 
-# Kiểm tra Python version (phải >=3.10, <3.13 cho coqui-tts)
+# Kiểm tra Python version (phải >=3.10, <3.13 cho coqui-tts 0.27.1)
 if sys.version_info < (3, 10) or sys.version_info >= (3, 13):
     raise RuntimeError("coqui-tts requires Python >=3.10, <3.13")
 
@@ -60,7 +60,8 @@ MODELS = {
     "vi-vn": {
         "name": "Vietnamese (XTTS-v2 với voice cloning)",
         "model": "tts_models/multilingual/multi-dataset/xtts_v2",
-        "speakers": ["male_vi_1", "female_vi_1", "female_vi_2"]
+        "speakers": ["male_vi_1", "female_vi_1", "female_vi_2"],
+        "fallback_model": "tts_models/vi/vits"  # Fallback nếu XTTS chậm
     },
 }
 
@@ -95,7 +96,7 @@ def timeout(seconds):
 
 @timeout(600)
 def load_model(lang_code):
-    """Load model TTS trên CPU"""
+    """Load model TTS trên CPU, fallback sang VITS nếu cần"""
     if lang_code not in loaded_models:
         try:
             logging.debug(f"Bắt đầu tải mô hình cho {lang_code}")
@@ -105,21 +106,40 @@ def load_model(lang_code):
 
             cache_dir = os.path.expanduser("~/.local/share/tts")
             model_path = os.path.join(cache_dir, MODELS[lang_code]["model"].replace("/", "--"))
-            if os.path.exists(model_path):
-                logging.debug(f"Cache mô hình tồn tại tại {model_path}, sử dụng cache")
-                model = TTS(
-                    model_name=MODELS[lang_code]["model"],
-                    model_path=model_path,
-                    progress_bar=False,
-                    gpu=False
-                )
-            else:
-                logging.debug(f"Không tìm thấy cache tại {model_path}, tải từ Hugging Face")
-                model = TTS(
-                    model_name=MODELS[lang_code]["model"],
-                    progress_bar=False,
-                    gpu=False
-                )
+            try:
+                if os.path.exists(model_path):
+                    logging.debug(f"Cache mô hình tồn tại tại {model_path}, sử dụng cache")
+                    model = TTS(
+                        model_name=MODELS[lang_code]["model"],
+                        model_path=model_path,
+                        progress_bar=False,
+                        gpu=False
+                    )
+                else:
+                    logging.debug(f"Không tìm thấy cache tại {model_path}, tải XTTS-v2 từ Hugging Face")
+                    model = TTS(
+                        model_name=MODELS[lang_code]["model"],
+                        progress_bar=False,
+                        gpu=False
+                    )
+            except Exception as e:
+                logging.warning(f"Không tải được XTTS-v2: {str(e)}. Fallback sang VITS.")
+                model_path = os.path.join(cache_dir, MODELS[lang_code]["fallback_model"].replace("/", "--"))
+                if os.path.exists(model_path):
+                    logging.debug(f"Cache VITS tồn tại tại {model_path}")
+                    model = TTS(
+                        model_name=MODELS[lang_code]["fallback_model"],
+                        model_path=model_path,
+                        progress_bar=False,
+                        gpu=False
+                    )
+                else:
+                    logging.debug(f"Tải VITS từ Hugging Face")
+                    model = TTS(
+                        model_name=MODELS[lang_code]["fallback_model"],
+                        progress_bar=False,
+                        gpu=False
+                    )
 
             logging.debug(f"Ngôn ngữ hỗ trợ: {model.languages}")
             if lang_code not in model.languages:
@@ -192,7 +212,7 @@ def extract_text(file):
         logging.error(f"Lỗi khi đọc file {filename}: {str(e)}")
         raise ValueError(f"Failed to process file {filename}: {str(e)}")
 
-def split_text(text, max_len=200):
+def split_text(text, max_len=100):  # Giảm max_len để nhanh hơn trên CPU
     """Chia text thành các phần bằng . và \n, mỗi phần <= max_len ký tự"""
     logging.debug("Bắt đầu chia văn bản")
     start_time = time.time()
