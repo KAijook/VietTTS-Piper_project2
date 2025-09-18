@@ -8,4 +8,4 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: PYTHON_VERSION
-        value: 3.10.12  # Python 3.10, compatible with TTS==0.22.0
+        value: 3.10.14   
