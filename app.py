@@ -1,11 +1,12 @@
 from flask import Flask, request, render_template, send_file, flash, redirect, url_for
 import os
+import sys
 import uuid
 import re
 import numpy as np
 from scipy.io import wavfile
 import torch
-from TTS.api import TTS
+from TTS.api import TTS  # Giữ nguyên import từ coqui-tts
 from TTS.tts.configs.xtts_config import XttsConfig
 import docx
 from num2words import num2words
@@ -15,6 +16,10 @@ import threading
 from functools import wraps
 from werkzeug.utils import secure_filename
 import soundfile as sf
+
+# Kiểm tra Python version (phải >=3.10, <3.13 cho coqui-tts)
+if sys.version_info < (3, 10) or sys.version_info >= (3, 13):
+    raise RuntimeError("coqui-tts requires Python >=3.10, <3.13")
 
 # Thiết lập logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -44,7 +49,7 @@ def patched_torch_load(*args, **kwargs):
 torch.load = patched_torch_load
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'your_secret_key_here')  # Sử dụng env var cho Render
+app.secret_key = os.environ.get('SECRET_KEY', 'your_secret_key_here')
 
 # Thư mục lưu giọng mặc định
 VOICE_DIR = 'static/voices'
@@ -95,7 +100,7 @@ def load_model(lang_code):
         try:
             logging.debug(f"Bắt đầu tải mô hình cho {lang_code}")
             start_time = time.time()
-            device = "cpu"  # Render chỉ hỗ trợ CPU
+            device = "cpu"
             logging.debug(f"Chạy trên {device}")
 
             cache_dir = os.path.expanduser("~/.local/share/tts")
