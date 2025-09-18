@@ -2,14 +2,47 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Narakeet TTS CSV</title>
+    <title>Đọc văn bản tiếng Việt với Voice Cloning</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        form { margin-bottom: 20px; }
+        input[type="file"], button { margin: 10px 0; padding: 10px; }
+        .error { color: red; }
+        .success { color: green; }
+        .info { color: blue; }
+    </style>
 </head>
 <body>
-    <h1>Upload CSV để chuyển thành giọng nói</h1>
-    <form method="post" enctype="multipart/form-data">
-        <input type="file" name="file" accept=".csv"><br><br>
-        <button type="submit">Chuyển đổi</button>
+    <h1>Chuyển văn bản thành giọng nói tiếng Việt (XTTS-v2 với Voice Cloning)</h1>
+
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            {% for message in messages %}
+                <p class="{{ 'success' if 'Đã lưu' in message else 'error' }}">{{ message }}</p>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    {% if has_custom_voice %}
+        <p class="info">Đang sử dụng giọng tùy chỉnh làm mặc định.</p>
+    {% endif %}
+
+    <h2>1. Thêm/Thay đổi giọng mặc định</h2>
+    <form method="POST" enctype="multipart/form-data" action="{{ url_for('upload_voice') }}">
+        <label>Upload file WAV (giọng mẫu, 3-10 giây, rõ ràng):</label><br>
+        <input type="file" name="voice_file" accept=".wav" required><br>
+        <button type="submit">Lưu làm giọng mặc định</button>
     </form>
-    <p>📌 CSV phải có cột: <b>id,text,voice</b> (voice có thể bỏ trống).</p>
+
+    <h2>2. Đọc văn bản</h2>
+    <form method="POST" enctype="multipart/form-data">
+        <label>Chọn file (.txt hoặc .docx):</label><br>
+        <input type="file" name="document" accept=".txt,.docx" required><br>
+        <button type="submit">Đọc và tải audio</button>
+    </form>
+
+    {% if error %}
+        <p class="error">Lỗi: {{ error }}</p>
+    {% endif %}
 </body>
 </html>
