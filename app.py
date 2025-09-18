@@ -3,7 +3,7 @@ import sys
 if sys.version_info < (3, 9) or sys.version_info >= (3, 12):
     raise RuntimeError(f"TTS requires Python >=3.9, <3.12, but found {sys.version}")
 
-from flask import Flask, request, render_template, send_file, flash, redirect, url_for
+import gradio as gr
 import os
 import uuid
 import re
@@ -16,9 +16,6 @@ import docx
 from num2words import num2words
 import logging
 import time
-import threading
-from functools import wraps
-from werkzeug.utils import secure_filename
 import soundfile as sf
 
 # Thiết lập logging
@@ -48,10 +45,8 @@ def patched_torch_load(*args, **kwargs):
 
 torch.load = patched_torch_load
 
-app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'your_secret_key_here')
-
-# Thư mục lưu giọng mặc định
+# Thư mục lưu audio và giọng
+os.makedirs("static", exist_ok=True)
 VOICE_DIR = 'static/voices'
 os.makedirs(VOICE_DIR, exist_ok=True)
 DEFAULT_VOICE_PATH = os.path.join(VOICE_DIR, 'default_speaker.wav')
@@ -61,42 +56,14 @@ MODELS = {
         "name": "Vietnamese (XTTS-v2 với voice cloning)",
         "model": "tts_models/multilingual/multi-dataset/xtts_v2",
         "speakers": ["male_vi_1", "female_vi_1", "female_vi_2"],
-        "fallback_model": "tts_models/vi/vits"  # Fallback nếu XTTS chậm
+        "fallback_model": "tts_models/vi/vits"  # Fallback nếu XTTS lỗi
     },
 }
 
 loaded_models = {}
 
-def timeout(seconds):
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            result = [None]
-            exception = [None]
-
-            def target():
-                try:
-                    result[0] = func(*args, **kwargs)
-                except Exception as e:
-                    exception[0] = e
-
-            thread = threading.Thread(target=target)
-            thread.daemon = True
-            thread.start()
-            thread.join(seconds)
-
-            if thread.is_alive():
-                raise TimeoutError(f"Function {func.__name__} timed out after {seconds} seconds")
-            if exception[0]:
-                raise exception[0]
-            return result[0]
-
-        return wrapper
-    return decorator
-
-@timeout(600)
 def load_model(lang_code):
-    """Load model TTS trên CPU, fallback sang VITS nếu cần"""
+    """Load model TTS trên CPU, fallback sang VITS nếu XTTS lỗi"""
     if lang_code not in loaded_models:
         try:
             logging.debug(f"Bắt đầu tải mô hình cho {lang_code}")
@@ -108,7 +75,7 @@ def load_model(lang_code):
             model_path = os.path.join(cache_dir, MODELS[lang_code]["model"].replace("/", "--"))
             try:
                 if os.path.exists(model_path):
-                    logging.debug(f"Cache mô hình tồn tại tại {model_path}, sử dụng cache")
+                    logging.debug(f"Cache XTTS tồn tại tại {model_path}")
                     model = TTS(
                         model_name=MODELS[lang_code]["model"],
                         model_path=model_path,
@@ -116,7 +83,7 @@ def load_model(lang_code):
                         gpu=False
                     )
                 else:
-                    logging.debug(f"Không tìm thấy cache tại {model_path}, tải XTTS-v2 từ Hugging Face")
+                    logging.debug(f"Tải XTTS-v2 từ Hugging Face")
                     model = TTS(
                         model_name=MODELS[lang_code]["model"],
                         progress_bar=False,
@@ -198,55 +165,40 @@ def normalize_numbers(text, lang="vi-vn"):
 
 def extract_text(file):
     """Đọc nội dung file txt/docx"""
-    logging.debug(f"Đọc file: {file.filename}")
-    filename = file.filename.lower()
+    if file is None:
+        return None, "Không có file được chọn."
+    filename = file.name.lower()
+    logging.debug(f"Đọc file: {filename}")
     try:
         if filename.endswith(".txt"):
-            return file.read().decode("utf-8", errors="ignore")
+            return file.read().decode("utf-8", errors="ignore"), None
         elif filename.endswith(".docx"):
             doc = docx.Document(file)
-            return "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
+            return "\n".join([para.text for para in doc.paragraphs if para.text.strip()]), None
         else:
-            raise ValueError("Unsupported file format (only .txt, .docx supported)")
+            return None, "Chỉ hỗ trợ file .txt hoặc .docx."
     except Exception as e:
         logging.error(f"Lỗi khi đọc file {filename}: {str(e)}")
-        raise ValueError(f"Failed to process file {filename}: {str(e)}")
+        return None, f"Lỗi khi đọc file: {str(e)}"
 
-def split_text(text, max_len=100):
-    """Chia text thành các phần bằng . và \n, mỗi phần <= max_len ký tự"""
-    logging.debug("Bắt đầu chia văn bản")
-    start_time = time.time()
-    sentences = re.split(r'(?<=[.!?])\s+|\n', text.strip())
-    parts = []
-    current_part = ""
-    for sent in sentences:
-        if len(current_part + sent) < max_len:
-            current_part += sent + " "
-        else:
-            if current_part:
-                parts.append(current_part.strip())
-            current_part = sent + " "
-    if current_part:
-        parts.append(current_part.strip())
-    elapsed_time = time.time() - start_time
-    logging.debug(f"Chia văn bản thành {len(parts)} phần trong {elapsed_time:.2f} giây")
-    return parts
-
-def validate_wav(file_path):
+def validate_wav(file):
     """Kiểm tra file WAV hợp lệ và độ dài (3-10 giây)"""
+    if file is None:
+        return None, "Không có file WAV được chọn."
     try:
-        with sf.SoundFile(file_path) as f:
+        with sf.SoundFile(file) as f:
             duration = len(f) / f.samplerate
             if duration < 3 or duration > 10:
-                raise ValueError(f"File WAV phải có độ dài từ 3 đến 10 giây, hiện tại: {duration:.2f} giây")
+                return None, f"File WAV phải có độ dài từ 3 đến 10 giây, hiện tại: {duration:.2f} giây"
             if f.format != 'WAV':
-                raise ValueError("File không phải định dạng WAV")
+                return None, "File không phải định dạng WAV"
+        return file.name, None
     except Exception as e:
         logging.error(f"Lỗi kiểm tra file WAV: {str(e)}")
-        raise ValueError(f"File WAV không hợp lệ: {str(e)}")
+        return None, f"File WAV không hợp lệ: {str(e)}"
 
 def synthesize_parts(model, parts, base_path, lang, speaker_wav=None):
-    """Generate audio cho từng part và merge"""
+    """Generate audio cho từng part và merge - hỗ trợ speaker_wav cho cloning"""
     logging.debug(f"Bắt đầu tạo audio cho {len(parts)} phần")
     start_time = time.time()
     os.makedirs("static", exist_ok=True)
@@ -262,7 +214,7 @@ def synthesize_parts(model, parts, base_path, lang, speaker_wav=None):
             "language": lang
         }
         if speaker_wav and os.path.exists(speaker_wav):
-            validate_wav(speaker_wav)
+            validate_wav(open(speaker_wav, 'rb'))
             kwargs["speaker_wav"] = speaker_wav
             logging.debug(f"Sử dụng custom voice từ {speaker_wav}")
         else:
@@ -288,76 +240,105 @@ def synthesize_parts(model, parts, base_path, lang, speaker_wav=None):
     logging.debug(f"Tạo và merge audio hoàn tất trong {elapsed_time:.2f} giây")
     return base_path
 
-@app.route("/static/<path:filename>")
-def serve_static(filename):
-    """Phục vụ file tĩnh như CSS"""
-    return send_file(os.path.join("static", filename))
-
-@app.route("/upload_voice", methods=["POST"])
-def upload_voice():
-    """Upload và lưu file WAV làm giọng mặc định"""
-    if 'voice_file' not in request.files:
-        flash('Không có file được chọn.')
-        return redirect(url_for('index'))
-
-    file = request.files['voice_file']
-    if file.filename == '':
-        flash('Không có file được chọn.')
-        return redirect(url_for('index'))
-
-    if file and file.filename.lower().endswith('.wav'):
-        try:
-            temp_path = os.path.join(VOICE_DIR, secure_filename(file.filename))
-            file.save(temp_path)
-            validate_wav(temp_path)
-            os.replace(temp_path, DEFAULT_VOICE_PATH)
-            flash(f'Đã lưu giọng mặc định từ {file.filename}.')
-            logging.debug(f"Đã lưu custom voice tại {DEFAULT_VOICE_PATH}")
-        except Exception as e:
-            flash(f'Lỗi khi lưu file: {str(e)}')
-            logging.error(f"Lỗi upload voice: {str(e)}")
-    else:
-        flash('Chỉ hỗ trợ file .wav.')
-    return redirect(url_for('index'))
-
-@app.route("/", methods=["GET", "POST"])
-def index():
+def process_tts(document_file, voice_file):
+    """Hàm chính để xử lý TTS với Gradio"""
     lang = "vi-vn"
-    if request.method == "POST":
-        if 'document' in request.files:
-            file = request.files.get("document")
-            if file:
-                try:
-                    logging.debug("Bắt đầu xử lý request POST")
-                    start_time = time.time()
-                    os.makedirs("static", exist_ok=True)
-                    text = extract_text(file)
-                    if len(text) > 5000:
-                        text = text[:5000]
-                        logging.warning("Văn bản dài hơn 5000 ký tự, cắt bớt")
+    start_time = time.time()
+    logging.debug("Bắt đầu xử lý TTS")
 
-                    text = normalize_numbers(text, lang)
-                    model = load_model(lang)
-                    output_path = f"static/{uuid.uuid4().hex}.wav"
+    # Xử lý file văn bản
+    text, error = extract_text(document_file)
+    if error:
+        return None, error
 
-                    parts = split_text(text)
-                    speaker_wav = DEFAULT_VOICE_PATH if os.path.exists(DEFAULT_VOICE_PATH) else None
-                    synthesize_parts(model, parts, output_path, lang, speaker_wav)
+    if len(text) > 5000:
+        text = text[:5000]
+        logging.warning("Văn bản dài hơn 5000 ký tự, cắt bớt")
 
-                    output_filename = f"{os.path.splitext(file.filename)[0]}_vietnamese.wav"
-                    elapsed_time = time.time() - start_time
-                    logging.debug(f"Xử lý POST hoàn tất trong {elapsed_time:.2f} giây")
-                    return send_file(output_path, as_attachment=True, download_name=output_filename)
+    # Chuẩn hóa văn bản
+    text = normalize_numbers(text, lang)
 
-                except Exception as e:
-                    logging.error(f"Lỗi khi xử lý POST: {str(e)}")
-                    flash(str(e))
-        elif 'voice_file' in request.files:
-            return redirect(url_for('upload_voice'))
+    # Xử lý file giọng nói (WAV)
+    speaker_wav, error = validate_wav(voice_file)
+    if error:
+        speaker_wav = None  # Dùng default speaker nếu WAV lỗi
 
-    has_custom_voice = os.path.exists(DEFAULT_VOICE_PATH)
-    return render_template("index.html", models=MODELS, error=None, lang=lang, has_custom_voice=has_custom_voice)
+    try:
+        # Tải model
+        model = load_model(lang)
+        output_path = f"static/{uuid.uuid4().hex}.wav"
+
+        # Chia văn bản và tạo audio
+        parts = split_text(text, max_len=200)
+        output_path = synthesize_parts(model, parts, output_path, lang, speaker_wav)
+
+        elapsed_time = time.time() - start_time
+        logging.debug(f"Xử lý TTS hoàn tất trong {elapsed_time:.2f} giây")
+        return output_path, None
+    except Exception as e:
+        logging.error(f"Lỗi khi xử lý TTS: {str(e)}")
+        return None, f"Lỗi: {str(e)}"
+
+def save_voice(voice_file):
+    """Lưu file WAV làm giọng mặc định"""
+    speaker_wav, error = validate_wav(voice_file)
+    if error:
+        return error
+    try:
+        os.replace(speaker_wav, DEFAULT_VOICE_PATH)
+        logging.debug(f"Đã lưu custom voice tại {DEFAULT_VOICE_PATH}")
+        return "Đã lưu giọng mặc định thành công."
+    except Exception as e:
+        logging.error(f"Lỗi khi lưu voice: {str(e)}")
+        return f"Lỗi khi lưu voice: {str(e)}"
+
+def split_text(text, max_len=200):
+    """Chia text thành các phần bằng . và \n, mỗi phần <= max_len ký tự"""
+    logging.debug("Bắt đầu chia văn bản")
+    start_time = time.time()
+    sentences = re.split(r'(?<=[.!?])\s+|\n', text.strip())
+    parts = []
+    current_part = ""
+    for sent in sentences:
+        if len(current_part + sent) < max_len:
+            current_part += sent + " "
+        else:
+            if current_part:
+                parts.append(current_part.strip())
+            current_part = sent + " "
+    if current_part:
+        parts.append(current_part.strip())
+    elapsed_time = time.time() - start_time
+    logging.debug(f"Chia văn bản thành {len(parts)} phần trong {elapsed_time:.2f} giây")
+    return parts
+
+# Giao diện Gradio
+with gr.Blocks(title="Chuyển Văn Bản Thành Giọng Nói Tiếng Việt (XTTS-v2)") as demo:
+    gr.Markdown("# Chuyển Văn Bản Thành Giọng Nói Tiếng Việt (XTTS-v2 với Voice Cloning)")
+    
+    with gr.Tab("Đọc Văn Bản"):
+        document_input = gr.File(label="Upload file văn bản (.txt hoặc .docx)", file_types=[".txt", ".docx"])
+        voice_input = gr.File(label="Upload file WAV (giọng mẫu, 3-10 giây, tùy chọn)", file_types=[".wav"])
+        submit_button = gr.Button("Tạo Audio")
+        audio_output = gr.Audio(label="Audio đầu ra", type="filepath")
+        error_output = gr.Textbox(label="Thông báo", interactive=False)
+        
+        submit_button.click(
+            fn=process_tts,
+            inputs=[document_input, voice_input],
+            outputs=[audio_output, error_output]
+        )
+    
+    with gr.Tab("Lưu Giọng Mặc Định"):
+        voice_save_input = gr.File(label="Upload file WAV (giọng mẫu, 3-10 giây)", file_types=[".wav"])
+        save_button = gr.Button("Lưu làm giọng mặc định")
+        save_output = gr.Textbox(label="Thông báo", interactive=False)
+        
+        save_button.click(
+            fn=save_voice,
+            inputs=voice_save_input,
+            outputs=save_output
+        )
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    demo.launch(server_name="0.0.0.0", server_port=7860)
