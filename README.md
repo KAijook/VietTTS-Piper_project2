@@ -1,51 +1,65 @@
 
-## 🎶 Vietnamese TTS with Piper + Gradio  
+## 🎶 Vietnamese TTS with Piper + Gradio
 
-Ứng dụng Text-to-Speech (TTS) tiếng Việt chất lượng cao, sử dụng **[Piper](https://github.com/rhasspy/piper)** và giao diện **Gradio**.  
-👉 Bạn có thể nhập văn bản tiếng Việt và nhận file âm thanh `.wav` với giọng tự nhiên, có hậu xử lý (noise reduction, compressor, reverb).  
+A high-quality Vietnamese Text-to-Speech (TTS) application using Piper
+ and a Gradio interface.
+👉 Enter Vietnamese text and generate a natural .wav audio file with post-processing (noise reduction, compressor, reverb).
 
----
+# You can try my model here: https://huggingface.co/spaces/Kaijook/Document-to-speech-VietTTS
+# 🚀 Features
 
-# 🚀 Tính năng  
+✅ Supports Piper ONNX model (vi_VN-25hours_single-low.onnx).
 
-- ✅ Hỗ trợ **Piper ONNX model** (`vi_VN-25hours_single-low.onnx`).  
-- ✅ Giao diện **Gradio** với nhiều tuỳ chỉnh: tốc độ, độ biểu cảm, độ ổn định, khoảng lặng.  
-- ✅ **Hậu xử lý âm thanh**:  
-  - Noise reduction (khử nhiễu nền).  
-  - Compressor (cân bằng âm lượng).  
-  - Reverb nhẹ (âm tự nhiên hơn).  
-- ✅ Lưu **lịch sử văn bản → audio** để tải lại khi cần.  
-- ✅ Giao diện **pastel dark theme** hiện đại, header có thể nhấp nháy ✨.  
+✅ Gradio interface with multiple controls: speed, expressiveness, stability, silence.
 
----
+✅ Audio post-processing:
 
-# 📦 Cài đặt  
+Noise reduction (remove background noise).
 
-Yêu cầu: Python 3.9+  
+Compressor (balance volume).
 
-# Tạo môi trường ảo (khuyến nghị)
+Light reverb (more natural sound).
+
+✅ Saves text → audio history for reuse.
+
+✅ Modern pastel dark theme UI with a blinking ✨ header.
+
+# 📦 Installation
+
+Requirements: Python 3.9+
+
+Create a virtual environment (recommended)
 python -m venv venv
 source venv/bin/activate   # Linux / macOS
 venv\Scripts\activate      # Windows
 
-# Cài thư viện cần thiết
+Install dependencies
 pip install -r requirements.txt
 
-# Sử dụng
+# 🎤 Usage
 
-1. Nhập văn bản tiếng Việt vào ô text
-2. Điều chỉnh các tham số theo ý muốn:
-   - **Tốc độ nói**: Giá trị thấp = nói nhanh hơn
-   - **Độ biểu cảm**: Giá trị cao = biểu cảm hơn
-   - **Độ ổn định**: Giá trị cao = ổn định hơn
-   - **Khoảng lặng**: Thời gian nghỉ giữa các câu
-3. Nhấn "Tạo giọng nói"
-4. Nghe kết quả và tải về nếu cần
+Enter Vietnamese text into the input box.
 
-# Mô hình
+Adjust the parameters as desired:
 
-Sử dụng mô hình `vi_VN-25hours_single-low` được huấn luyện trên 25 giờ dữ liệu tiếng Việt.
+Speed: Lower value = faster speech
 
-# License
+Expressiveness: Higher value = more expressive
 
-Không dùng cho mục đích thương mại
+Stability: Higher value = more stable
+
+Silence: Pause duration between sentences
+
+Click "Generate Voice".
+
+Listen to the result and download if needed.
+
+# 🧠 Model
+
+Uses the vi_VN-25hours_single-low model trained on 25 hours of Vietnamese data.
+
+# 📜 License
+
+Not for commercial use.
+
+
