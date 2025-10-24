@@ -57,6 +57,7 @@ Listen to the result and download if needed.
 # 🧠 Model
 
 Uses the vi_VN-25hours_single-low model trained on 25 hours of Vietnamese data.
+Short stories from "Truyện cổ tích tổng hợp". 
 
 # 📜 License
 
